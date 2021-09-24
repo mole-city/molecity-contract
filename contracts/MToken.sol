@@ -121,7 +121,7 @@ contract MToken is MTokenInterface, Exponential, TokenErrorReporter {
         emit Transfer(src, dst, tokens);
 
         // unused function
-        comptroller.transferVerify(address(this), src, dst, tokens);
+        // comptroller.transferVerify(address(this), src, dst, tokens);
 
         return uint(Error.NO_ERROR);
     }
@@ -556,7 +556,7 @@ contract MToken is MTokenInterface, Exponential, TokenErrorReporter {
 
         /* We call the defense hook */
         // unused function
-        comptroller.mintVerify(address(this), minter, vars.actualMintAmount, vars.mintTokens);
+        // comptroller.mintVerify(address(this), minter, vars.actualMintAmount, vars.mintTokens);
 
         return (uint(Error.NO_ERROR), vars.actualMintAmount);
     }
@@ -795,7 +795,7 @@ contract MToken is MTokenInterface, Exponential, TokenErrorReporter {
 
         /* We call the defense hook */
         // unused function
-        comptroller.borrowVerify(address(this), borrower, borrowAmount);
+        // comptroller.borrowVerify(address(this), borrower, borrowAmount);
 
         return uint(Error.NO_ERROR);
     }
@@ -913,7 +913,7 @@ contract MToken is MTokenInterface, Exponential, TokenErrorReporter {
 
         /* We call the defense hook */
         // unused function
-        comptroller.repayBorrowVerify(address(this), payer, borrower, vars.actualRepayAmount, vars.borrowerIndex);
+        // comptroller.repayBorrowVerify(address(this), payer, borrower, vars.actualRepayAmount, vars.borrowerIndex);
 
         return (uint(Error.NO_ERROR), vars.actualRepayAmount);
     }
@@ -1018,7 +1018,7 @@ contract MToken is MTokenInterface, Exponential, TokenErrorReporter {
 
         /* We call the defense hook */
         // unused function
-        comptroller.liquidateBorrowVerify(address(this), address(mTokenCollateral), liquidator, borrower, actualRepayAmount, seizeTokens);
+        // comptroller.liquidateBorrowVerify(address(this), address(mTokenCollateral), liquidator, borrower, actualRepayAmount, seizeTokens);
 
         return (uint(Error.NO_ERROR), actualRepayAmount);
     }
@@ -1115,7 +1115,7 @@ contract MToken is MTokenInterface, Exponential, TokenErrorReporter {
 
         /* We call the defense hook */
         // unused function
-        comptroller.seizeVerify(address(this), seizerToken, liquidator, borrower, seizeTokens);
+        // comptroller.seizeVerify(address(this), seizerToken, liquidator, borrower, seizeTokens);
 
         return uint(Error.NO_ERROR);
     }

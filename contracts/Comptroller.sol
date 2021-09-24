@@ -43,12 +43,6 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
     /// @notice Emitted when an action is paused on a market
     event ActionPaused(MToken mToken, string action, bool pauseState);
 
-    /// @notice Emitted when market moleed status is changed
-    event MarketMoleed(MToken mToken, bool isMoleed);
-
-    /// @notice Emitted when MOLE rate is changed
-    event NewMoleRate(uint oldMoleRate, uint newMoleRate);
-
     /// @notice Emitted when a new MOLE speed is calculated for a market
     event MoleSpeedUpdated(MToken indexed mToken, uint newSpeed);
 
@@ -69,9 +63,6 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
 
     /// @notice Emitted when MOLE is granted by admin
     event MoleGranted(address recipient, uint amount);
-
-    /// @notice The threshold above which the flywheel transfers MOLE, in wei
-    uint public constant moleClaimThreshold = 0.001e18;
 
     /// @notice The initial MOLE index for a market
     uint224 public constant moleInitialIndex = 1e36;
@@ -244,7 +235,7 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
 
         // Keep the flywheel moving
         updateMoleSupplyIndex(mToken);
-        distributeSupplierMole(mToken, minter, false);
+        distributeSupplierMole(mToken, minter);
 
         return uint(Error.NO_ERROR);
     }
@@ -284,7 +275,7 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
 
         // Keep the flywheel moving
         updateMoleSupplyIndex(mToken);
-        distributeSupplierMole(mToken, redeemer, false);
+        distributeSupplierMole(mToken, redeemer);
 
         return uint(Error.NO_ERROR);
     }
@@ -382,7 +373,7 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
         // Keep the flywheel moving
         Exp memory borrowIndex = Exp({mantissa: MToken(mToken).borrowIndex()});
         updateMoleBorrowIndex(mToken, borrowIndex);
-        distributeBorrowerMole(mToken, borrower, borrowIndex, false);
+        distributeBorrowerMole(mToken, borrower, borrowIndex);
 
         return uint(Error.NO_ERROR);
     }
@@ -403,9 +394,6 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
         if (false) {
             maxAssets = maxAssets;
         }
-        
-        refreshMoleSpeedsInternal();
-
     }
 
     /**
@@ -433,7 +421,7 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
         // Keep the flywheel moving
         Exp memory borrowIndex = Exp({mantissa: MToken(mToken).borrowIndex()});
         updateMoleBorrowIndex(mToken, borrowIndex);
-        distributeBorrowerMole(mToken, borrower, borrowIndex, false);
+        distributeBorrowerMole(mToken, borrower, borrowIndex);
 
         return uint(Error.NO_ERROR);
     }
@@ -462,9 +450,6 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
         if (false) {
             maxAssets = maxAssets;
         }
-        
-        refreshMoleSpeedsInternal();
-
     }
 
     /**
@@ -488,22 +473,28 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
             return uint(Error.MARKET_NOT_LISTED);
         }
 
-        /* The borrower must have shortfall in order to be liquidatable */
-        (Error err, , uint shortfall) = getAccountLiquidityInternal(borrower);
-        if (err != Error.NO_ERROR) {
-            return uint(err);
-        }
-        if (shortfall == 0) {
-            return uint(Error.INSUFFICIENT_SHORTFALL);
-        }
-
-        /* The liquidator may not repay more than what is allowed by the closeFactor */
         uint borrowBalance = MToken(mTokenBorrowed).borrowBalanceStored(borrower);
-        uint maxClose = mul_ScalarTruncate(Exp({mantissa: closeFactorMantissa}), borrowBalance);
-        if (repayAmount > maxClose) {
-            return uint(Error.TOO_MUCH_REPAY);
-        }
 
+        /* allow accounts to be liquidated if the market is deprecated */
+        if (isDeprecated(MToken(mTokenBorrowed))) {
+            require(borrowBalance >= repayAmount, "Can not repay more than the total borrow");
+        } else {
+            /* The borrower must have shortfall in order to be liquidatable */
+            (Error err, , uint shortfall) = getAccountLiquidityInternal(borrower);
+            if (err != Error.NO_ERROR) {
+                return uint(err);
+            }
+
+            if (shortfall == 0) {
+                return uint(Error.INSUFFICIENT_SHORTFALL);
+            }
+
+            /* The liquidator may not repay more than what is allowed by the closeFactor */
+            uint maxClose = mul_ScalarTruncate(Exp({mantissa: closeFactorMantissa}), borrowBalance);
+            if (repayAmount > maxClose) {
+                return uint(Error.TOO_MUCH_REPAY);
+            }
+        }
         return uint(Error.NO_ERROR);
     }
 
@@ -534,9 +525,6 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
         if (false) {
             maxAssets = maxAssets;
         }
-        
-        refreshMoleSpeedsInternal();
-
     }
 
     /**
@@ -569,8 +557,8 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
 
         // Keep the flywheel moving
         updateMoleSupplyIndex(mTokenCollateral);
-        distributeSupplierMole(mTokenCollateral, borrower, false);
-        distributeSupplierMole(mTokenCollateral, liquidator, false);
+        distributeSupplierMole(mTokenCollateral, borrower);
+        distributeSupplierMole(mTokenCollateral, liquidator);
 
         return uint(Error.NO_ERROR);
     }
@@ -623,8 +611,8 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
 
         // Keep the flywheel moving
         updateMoleSupplyIndex(mToken);
-        distributeSupplierMole(mToken, src, false);
-        distributeSupplierMole(mToken, dst, false);
+        distributeSupplierMole(mToken, src);
+        distributeSupplierMole(mToken, dst);
 
         return uint(Error.NO_ERROR);
     }
@@ -942,6 +930,7 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
 
         mToken.isMToken(); // Sanity check to make sure its really a MToken
 
+        // Note that isMoleed is not in active use anymore
         markets[address(mToken)] = Market({isListed: true, isMoleed: false, collateralFactorMantissa: 0});
 
         _addMarketInternal(address(mToken));
@@ -1071,40 +1060,40 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
     /*** Mole Distribution ***/
 
     /**
-     * @notice Recalculate and update MOLE speeds for all MOLE markets
+     * @notice Set MOLE speed for a single market
+     * @param mToken The market whose MOLE speed to update
+     * @param moleSpeed New MOLE speed for market
      */
-    function refreshMoleSpeeds() public {
-        require(msg.sender == tx.origin, "only externally owned accounts may refresh speeds");
-        refreshMoleSpeedsInternal();
-    }
-
-    function refreshMoleSpeedsInternal() internal {
-        MToken[] memory allMarkets_ = allMarkets;
-
-        for (uint i = 0; i < allMarkets_.length; i++) {
-            MToken mToken = allMarkets_[i];
+    function setMoleSpeedInternal(MToken mToken, uint moleSpeed) internal {
+        uint currentMoleSpeed = moleSpeeds[address(mToken)];
+        if (currentMoleSpeed != 0) {
+            // note that MOLE speed could be set to 0 to halt liquidity rewards for a market
             Exp memory borrowIndex = Exp({mantissa: mToken.borrowIndex()});
             updateMoleSupplyIndex(address(mToken));
             updateMoleBorrowIndex(address(mToken), borrowIndex);
-        }
+        } else if (moleSpeed != 0) {
+            // Add the MOLE market
+            Market storage market = markets[address(mToken)];
+            require(market.isListed == true, "mole market is not listed");
 
-        Exp memory totalUtility = Exp({mantissa: 0});
-        Exp[] memory utilities = new Exp[](allMarkets_.length);
-        for (uint i = 0; i < allMarkets_.length; i++) {
-            MToken mToken = allMarkets_[i];
-            if (markets[address(mToken)].isMoleed) {
-                Exp memory assetPrice = Exp({mantissa: oracle.getUnderlyingPrice(mToken)});
-                Exp memory utility = mul_(assetPrice, mToken.totalBorrows());
-                utilities[i] = utility;
-                totalUtility = add_(totalUtility, utility);
+            if (moleSupplyState[address(mToken)].index == 0 && moleSupplyState[address(mToken)].block == 0) {
+                moleSupplyState[address(mToken)] = MoleMarketState({
+                    index: moleInitialIndex,
+                    block: safe32(getBlockNumber(), "block number exceeds 32 bits")
+                });
+            }
+
+            if (moleBorrowState[address(mToken)].index == 0 && moleBorrowState[address(mToken)].block == 0) {
+                moleBorrowState[address(mToken)] = MoleMarketState({
+                    index: moleInitialIndex,
+                    block: safe32(getBlockNumber(), "block number exceeds 32 bits")
+                });
             }
         }
 
-        for (uint i = 0; i < allMarkets_.length; i++) {
-            MToken mToken = allMarkets[i];
-            uint newSpeed = totalUtility.mantissa > 0 ? mul_(moleRate, div_(utilities[i], totalUtility)) : 0;
-            moleSpeeds[address(mToken)] = newSpeed;
-            emit MoleSpeedUpdated(mToken, newSpeed);
+        if (currentMoleSpeed != moleSpeed) {
+            moleSpeeds[address(mToken)] = moleSpeed;
+            emit MoleSpeedUpdated(mToken, moleSpeed);
         }
     }
 
@@ -1159,7 +1148,7 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
      * @param mToken The market in which the supplier is interacting
      * @param supplier The address of the supplier to distribute MOLE to
      */
-    function distributeSupplierMole(address mToken, address supplier, bool distributeAll) internal {
+    function distributeSupplierMole(address mToken, address supplier) internal {
         MoleMarketState storage supplyState = moleSupplyState[mToken];
         Double memory supplyIndex = Double({mantissa: supplyState.index});
         Double memory supplierIndex = Double({mantissa: moleSupplierIndex[mToken][supplier]});
@@ -1173,7 +1162,7 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
         uint supplierTokens = MToken(mToken).balanceOf(supplier);
         uint supplierDelta = mul_(supplierTokens, deltaIndex);
         uint supplierAccrued = add_(moleAccrued[supplier], supplierDelta);
-        moleAccrued[supplier] = transferMole(supplier, supplierAccrued, distributeAll ? 0 : moleClaimThreshold);
+        moleAccrued[supplier] = supplierAccrued;
         emit DistributedSupplierMole(MToken(mToken), supplier, supplierDelta, supplyIndex.mantissa);
     }
 
@@ -1183,7 +1172,7 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
      * @param mToken The market in which the borrower is interacting
      * @param borrower The address of the borrower to distribute MOLE to
      */
-    function distributeBorrowerMole(address mToken, address borrower, Exp memory marketBorrowIndex, bool distributeAll) internal {
+    function distributeBorrowerMole(address mToken, address borrower, Exp memory marketBorrowIndex) internal {
         MoleMarketState storage borrowState = moleBorrowState[mToken];
         Double memory borrowIndex = Double({mantissa: borrowState.index});
         Double memory borrowerIndex = Double({mantissa: moleBorrowerIndex[mToken][borrower]});
@@ -1194,28 +1183,9 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
             uint borrowerAmount = div_(MToken(mToken).borrowBalanceStored(borrower), marketBorrowIndex);
             uint borrowerDelta = mul_(borrowerAmount, deltaIndex);
             uint borrowerAccrued = add_(moleAccrued[borrower], borrowerDelta);
-            moleAccrued[borrower] = transferMole(borrower, borrowerAccrued, distributeAll ? 0 : moleClaimThreshold);
+            moleAccrued[borrower] = borrowerAccrued;
             emit DistributedBorrowerMole(MToken(mToken), borrower, borrowerDelta, borrowIndex.mantissa);
         }
-    }
-
-    /**
-     * @notice Transfer MOLE to the user, if they are above the threshold
-     * @dev Note: If there is not enough MOLE, we do not perform the transfer all.
-     * @param user The address of the user to transfer MOLE to
-     * @param userAccrued The amount of MOLE to (possibly) transfer
-     * @return The amount of MOLE which was NOT transferred to the user
-     */
-    function transferMole(address user, uint userAccrued, uint threshold) internal returns (uint) {
-        if (userAccrued >= threshold && userAccrued > 0) {
-            Mole mole = Mole(getMoleAddress());
-            uint moleRemaining = mole.balanceOf(address(this));
-            if (userAccrued <= moleRemaining) {
-                mole.transfer(user, userAccrued);
-                return 0;
-            }
-        }
-        return userAccrued;
     }
 
     /**
@@ -1240,7 +1210,6 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
      * @param holder The address to claim MOLE for
      */
     function claimMole(address holder) public {
-        updateContributorRewards(holder);
         return claimMole(holder, allMarkets);
     }
 
@@ -1270,15 +1239,18 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
                 Exp memory borrowIndex = Exp({mantissa: mToken.borrowIndex()});
                 updateMoleBorrowIndex(address(mToken), borrowIndex);
                 for (uint j = 0; j < holders.length; j++) {
-                    distributeBorrowerMole(address(mToken), holders[j], borrowIndex, true);
+                    distributeBorrowerMole(address(mToken), holders[j], borrowIndex);
                 }
             }
             if (suppliers == true) {
                 updateMoleSupplyIndex(address(mToken));
                 for (uint j = 0; j < holders.length; j++) {
-                    distributeSupplierMole(address(mToken), holders[j], true);
+                    distributeSupplierMole(address(mToken), holders[j]);
                 }
             }
+        }
+        for (uint j = 0; j < holders.length; j++) {
+            moleAccrued[holders[j]] = grantMoleInternal(holders[j], moleAccrued[holders[j]]);
         }
     }
 
@@ -1292,7 +1264,7 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
     function grantMoleInternal(address user, uint amount) internal returns (uint) {
         Mole mole = Mole(getMoleAddress());
         uint moleRemaining = mole.balanceOf(address(this));
-        if (amount <= moleRemaining) {
+        if (amount > 0 && amount <= moleRemaining) {
             mole.transfer(user, amount);
             return 0;
         }
@@ -1315,6 +1287,16 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
     }
 
     /**
+     * @notice Set MOLE speed for a single market
+     * @param mToken The market whose MOLE speed to update
+     * @param moleSpeed New MOLE speed for market
+     */
+    function _setMoleSpeed(MToken mToken, uint moleSpeed) public {
+        require(adminOrInitializing(), "only admin can set mole speed");
+        setMoleSpeedInternal(mToken, moleSpeed);
+    }
+
+    /**
      * @notice Set MOLE speed for a single contributor
      * @param contributor The contributor whose MOLE speed to update
      * @param moleSpeed New MOLE speed for contributor
@@ -1327,79 +1309,12 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
         if (moleSpeed == 0) {
             // release storage
             delete lastContributorBlock[contributor];
+        } else {
+            lastContributorBlock[contributor] = getBlockNumber();
         }
-        lastContributorBlock[contributor] = getBlockNumber();
         moleContributorSpeeds[contributor] = moleSpeed;
 
         emit ContributorMoleSpeedUpdated(contributor, moleSpeed);
-    }
-
-    /*** Mole Distribution Admin ***/
-    /**
-     * @notice Set the amount of MOLE distributed per block
-     * @param moleRate_ The amount of MOLE wei per block to distribute
-     */
-    function _setMoleRate(uint moleRate_) public {
-        require(adminOrInitializing(), "only admin can change mole rate");
-
-        uint oldRate = moleRate;
-        moleRate = moleRate_;
-        emit NewMoleRate(oldRate, moleRate_);
-
-        refreshMoleSpeedsInternal();
-    }
-
-    /**
-     * @notice Add markets to moleMarkets, allowing them to earn MOLE in the flywheel
-     * @param mTokens The addresses of the markets to add
-     */
-    function _addMoleMarkets(address[] memory mTokens) public {
-        require(adminOrInitializing(), "only admin can add mole market");
-
-        for (uint i = 0; i < mTokens.length; i++) {
-            _addMoleMarketInternal(mTokens[i]);
-        }
-
-        refreshMoleSpeedsInternal();
-    }
-
-    function _addMoleMarketInternal(address mToken) internal {
-        Market storage market = markets[mToken];
-        require(market.isListed == true, "mole market is not listed");
-        require(market.isMoleed == false, "mole market already added");
-
-        market.isMoleed = true;
-        emit MarketMoleed(MToken(mToken), true);
-
-        if (moleSupplyState[mToken].index == 0 && moleSupplyState[mToken].block == 0) {
-            moleSupplyState[mToken] = MoleMarketState({
-                index: moleInitialIndex,
-                block: safe32(getBlockNumber(), "block number exceeds 32 bits")
-            });
-        }
-
-        if (moleBorrowState[mToken].index == 0 && moleBorrowState[mToken].block == 0) {
-            moleBorrowState[mToken] = MoleMarketState({
-                index: moleInitialIndex,
-                block: safe32(getBlockNumber(), "block number exceeds 32 bits")
-            });
-        }
-    }
-
-    /**
-     * @notice Remove a market from moleMarkets, preventing it from earning MOLE in the flywheel
-     * @param mToken The address of the market to drop
-     */
-    function _dropMoleMarket(address mToken) public {
-        require(msg.sender == admin, "only admin can drop mole market");
-
-        Market storage market = markets[mToken];
-        require(market.isMoleed == true, "market is not a mole market");
-
-        market.isMoleed = false;
-        emit MarketMoleed(MToken(mToken), false);
-
-        refreshMoleSpeedsInternal();
     }
 
     /**
@@ -1411,6 +1326,19 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
         return allMarkets;
     }
 
+    /**
+     * @notice Returns true if the given mToken market has been deprecated
+     * @dev All borrows in a deprecated mToken market can be immediately liquidated
+     * @param mToken The market to check if deprecated
+     */
+    function isDeprecated(MToken mToken) public view returns (bool) {
+        return
+            markets[address(mToken)].collateralFactorMantissa == 0 && 
+            borrowGuardianPaused[address(mToken)] == true && 
+            mToken.reserveFactorMantissa() == 1e18
+        ;
+    }
+
     function getBlockNumber() public view returns (uint) {
         return block.number;
     }
@@ -1420,7 +1348,6 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
      * @return The address of MOLE
      */
     function getMoleAddress() public pure returns (address) {
-        return 0x2605386f355846947FCF8390d0E3F98e54FBA6Fd;
+        return 0xc00e94Cb662C3520282E6f5717214004A7f26888;
     }
-   
 }
