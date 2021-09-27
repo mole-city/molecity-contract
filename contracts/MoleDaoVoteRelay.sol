@@ -66,7 +66,10 @@ contract MoleDaoVoteRelay {
             uint period = voteWeights[lockAddress].period;
             uint weight = voteWeights[lockAddress].weight;
             uint balance = 0;
-            if (period == 0) {  //0 deposit and 0 fetch
+
+            require(period > 0, 'require period should bigger than 0');  
+
+            if (period == 0) {  //0 deposit and 0 fetch , Keep this branch for logical integrity
                 MoleThrowerInterface moleThrower = MoleThrowerInterface(lockAddress);
                 balance = moleThrower.getBalance(0, _user);
             } else {
