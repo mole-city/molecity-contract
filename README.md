@@ -28,22 +28,11 @@ At the same time, the image of mole is lovely, lively and naive, full of affinit
 
 ## Mole City Official Channels
 
-> Website : [mole.city](mole.city)  
+> Website : [https://mole.city/](https://mole.city/)  
+> 
+> Twitter: [https://twitter.com/MoleCityMC](https://twitter.com/MoleCityMC)
+> 
+> Telegram Channel: [https://t.me/molecity_mc](https://t.me/molecity_mc)
+> 
+> Discord : [https://discord.gg/8DE6DYVAsE](https://discord.gg/8DE6DYVAsE)
 >
-> APP: [mole.city](mole.city)
-
-> Wechat：		 
->
-> Weibo：
-
-> Twitter:  
->
-> Medium:   
->
-> Discord :  
->
-> Reddit: 
-
-> Telegram Channel: 
-
-> Telegram Group： 
