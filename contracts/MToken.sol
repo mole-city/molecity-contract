@@ -747,7 +747,7 @@ contract MToken is MTokenInterface, Exponential, TokenErrorReporter {
         }
 
         /* Fail gracefully if protocol has insufficient underlying cash */
-        if (getCashPrior() < borrowAmount) {
+        if (getCashPrior() - totalReserves < borrowAmount) {
             return fail(Error.TOKEN_INSUFFICIENT_CASH, FailureInfo.BORROW_CASH_NOT_AVAILABLE);
         }
 
